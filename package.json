@@ -47,7 +47,7 @@
         "husky": "^9.1.7",
         "jest-canvas-mock": "^2.5.2",
         "lint-staged": "^17.0.8",
-        "prettier": "^3.8.3",
+        "prettier": "^3.9.5",
         "prettier-plugin-apex": "^2.3.0"
     },
     "volta": {
