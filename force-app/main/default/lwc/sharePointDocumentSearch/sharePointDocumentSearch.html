@@ -1,0 +1,99 @@
+<template>
+    <lightning-card
+        title="SharePoint Document Search"
+        icon-name="standard:document"
+    >
+        <div class="slds-var-m-around_medium">
+            <lightning-layout
+                multiple-rows="true"
+                class="slds-var-m-bottom_small"
+            >
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-input
+                        label="Document Name"
+                        value={documentName}
+                        onchange={handleDocumentNameChange}
+                    ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-input
+                        label="Author"
+                        value={author}
+                        onchange={handleAuthorChange}
+                    ></lightning-input>
+                </lightning-layout-item>
+            </lightning-layout>
+
+            <div class="slds-var-m-bottom_medium">
+                <lightning-button
+                    label="Clear"
+                    onclick={handleClear}
+                    class="slds-var-m-right_x-small"
+                ></lightning-button>
+                <lightning-button
+                    variant="brand"
+                    label="Search"
+                    onclick={handleSearch}
+                ></lightning-button>
+            </div>
+
+            <lightning-spinner
+                lwc:if={isLoading}
+                alternative-text="Searching SharePoint"
+                size="small"
+            ></lightning-spinner>
+
+            <template lwc:if={error}>
+                <c-error-panel
+                    errors={error}
+                    friendly-message="Unable to search SharePoint"
+                ></c-error-panel>
+            </template>
+            <template lwc:elseif={hasResults}>
+                <table
+                    class="slds-table slds-table_bordered slds-table_cell-buffer"
+                >
+                    <thead>
+                        <tr class="slds-line-height_reset">
+                            <th scope="col">Document Name</th>
+                            <th scope="col">Author</th>
+                            <th scope="col">Last Modified</th>
+                            <th scope="col">Download</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template for:each={results} for:item="doc">
+                            <tr key={doc.key}>
+                                <td>{doc.title}</td>
+                                <td>{doc.author}</td>
+                                <td>
+                                    <lightning-formatted-date-time
+                                        value={doc.lastModified}
+                                        year="numeric"
+                                        month="short"
+                                        day="numeric"
+                                        hour="2-digit"
+                                        minute="2-digit"
+                                    ></lightning-formatted-date-time>
+                                </td>
+                                <td>
+                                    <lightning-button
+                                        label="Download"
+                                        data-drive-id={doc.driveId}
+                                        data-item-id={doc.itemId}
+                                        onclick={handleDownloadClick}
+                                    ></lightning-button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </template>
+            <template lwc:elseif={showNoResults}>
+                <p class="slds-var-p-around_small">
+                    No documents found matching your search criteria.
+                </p>
+            </template>
+        </div>
+    </lightning-card>
+</template>

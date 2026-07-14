@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+    Assign this permission set to users who need the SharePoint Document Search tab.
+    NOTE: Access to the SharePoint_Search_Cred External Credential principal must also be granted
+    via Setup > Permission Sets > SharePoint_Search_Access > External Credential Principal Access
+    (the exact metadata tag for this varies by release, so it is not scaffolded here).
+-->
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <classAccesses>
+        <apexClass>SharePointSearchController</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <label>SharePoint Search Access</label>
+    <tabSettings>
+        <tab>SharePoint_Document_Search</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+</PermissionSet>
