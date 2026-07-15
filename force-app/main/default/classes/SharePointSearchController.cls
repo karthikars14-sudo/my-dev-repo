@@ -10,6 +10,11 @@ public with sharing class SharePointSearchController {
     private static final String SEARCH_REGION = 'NAM';
 
     private static final String MP_AUTHOR = 'Author';
+    // Maps each search field to the SharePoint managed property it queries.
+    // If your Search Schema uses different managed property names, update these constants only.
+    private static final String MP_DOCUMENT_TYPE = 'DocumentType';
+    private static final String MP_PROJECT_ID = 'ProjectID';
+    private static final String MP_OPPORTUNITY_ID = 'OpportunityID';
     private static final String DOWNLOAD_URL_FIELD = '@microsoft.graph.downloadUrl';
 
     public class SharePointDocumentResult {
@@ -17,6 +22,12 @@ public with sharing class SharePointSearchController {
         public String title;
         @AuraEnabled
         public String author;
+        @AuraEnabled
+        public String documentType;
+        @AuraEnabled
+        public String projectId;
+        @AuraEnabled
+        public String opportunityId;
         @AuraEnabled
         public String fileUrl;
         @AuraEnabled
@@ -30,9 +41,18 @@ public with sharing class SharePointSearchController {
     @AuraEnabled
     public static List<SharePointDocumentResult> searchDocuments(
         String documentName,
+        String documentType,
+        String projectId,
+        String opportunityId,
         String author
     ) {
-        String queryText = buildQueryText(documentName, author);
+        String queryText = buildQueryText(
+            documentName,
+            documentType,
+            projectId,
+            opportunityId,
+            author
+        );
 
         HttpRequest req = new HttpRequest();
         req.setEndpoint(NAMED_CREDENTIAL + GRAPH_SEARCH_PATH);
@@ -58,7 +78,9 @@ public with sharing class SharePointSearchController {
             );
         }
 
-        return parseResults(res.getBody());
+        List<SharePointDocumentResult> results = parseResults(res.getBody());
+        enrichWithCustomFields(results);
+        return results;
     }
 
     // Fetches the direct, no-auth-required download URL for one document. Called on demand (when
@@ -114,6 +136,12 @@ public with sharing class SharePointSearchController {
         return downloadUrl;
     }
 
+    // NOTE: deliberately NOT requesting a "fields" array here. Confirmed twice against a live
+    // tenant (including with the correct managed-property casing) that specifying one on a
+    // driveItem search blanks out the entire result set. Microsoft's own documented example of
+    // "fields" only shows it working for entityTypes=externalItem, never driveItem - this looks
+    // like a real API limitation rather than a config mistake. Custom columns are fetched
+    // separately afterward via enrichWithCustomFields().
     private static Map<String, Object> buildRequestBody(String queryText) {
         Map<String, Object> searchRequest = new Map<String, Object>{
             'entityTypes' => new List<String>{ 'driveItem' },
@@ -127,16 +155,152 @@ public with sharing class SharePointSearchController {
         };
     }
 
-    // Matches on the "filename" managed property (the document's actual file name, as opposed to
-    // the separate, often-empty "Title" list column) with a trailing wildcard, so "test" matches
-    // "testdocument.docx". Note: SharePoint/Graph KQL only supports prefix wildcards (word*), not
-    // leading or mid-word wildcards - "test" won't match "mydocument-test.docx" since "test" isn't
+    private static final String BATCH_PATH = '/v1.0/$batch';
+    // Microsoft Graph's JSON batching endpoint accepts at most 20 sub-requests per call.
+    private static final Integer BATCH_CHUNK_SIZE = 20;
+
+    // Fetches DocumentType/ProjectID/OpportunityID for every result in one or a few $batch calls
+    // (not one callout per result) via each document's listItem?$expand=fields - the standard,
+    // well-documented way to read SharePoint list column values through Graph. Doing this eagerly
+    // per result would repeat the earlier "many callouts in one transaction" problem that caused
+    // OAuth token-refresh throttling; batching keeps it to at most ROW_LIMIT/20 extra callouts
+    // (so at most 3 with the current ROW_LIMIT of 50), regardless of how many results come back.
+    // Best-effort: any failure here leaves the affected results' custom fields blank rather than
+    // failing the whole search.
+    private static void enrichWithCustomFields(
+        List<SharePointDocumentResult> results
+    ) {
+        Integer index = 0;
+        while (index < results.size()) {
+            Integer endExclusive = Math.min(
+                index + BATCH_CHUNK_SIZE,
+                results.size()
+            );
+            List<SharePointDocumentResult> chunk = new List<SharePointDocumentResult>();
+            for (Integer i = index; i < endExclusive; i++) {
+                chunk.add(results[i]);
+            }
+            fetchCustomFieldsForChunk(chunk);
+            index = endExclusive;
+        }
+    }
+
+    private static void fetchCustomFieldsForChunk(
+        List<SharePointDocumentResult> chunk
+    ) {
+        List<Object> batchRequests = new List<Object>();
+        for (Integer i = 0; i < chunk.size(); i++) {
+            SharePointDocumentResult result = chunk[i];
+            if (
+                String.isBlank(result.driveId) || String.isBlank(result.itemId)
+            ) {
+                continue;
+            }
+            batchRequests.add(
+                new Map<String, Object>{
+                    'id' => String.valueOf(i),
+                    'method' => 'GET',
+                    'url' => '/drives/' +
+                    result.driveId +
+                    '/items/' +
+                    result.itemId +
+                    '/listItem?$expand=fields'
+                }
+            );
+        }
+        if (batchRequests.isEmpty()) {
+            return;
+        }
+
+        HttpRequest req = new HttpRequest();
+        req.setEndpoint(NAMED_CREDENTIAL + BATCH_PATH);
+        req.setMethod('POST');
+        req.setHeader('Content-Type', 'application/json');
+        req.setBody(
+            JSON.serialize(
+                new Map<String, Object>{ 'requests' => batchRequests }
+            )
+        );
+
+        HttpResponse res;
+        try {
+            res = new Http().send(req);
+        } catch (Exception e) {
+            return;
+        }
+        if (res.getStatusCode() != 200) {
+            return;
+        }
+
+        Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(
+            res.getBody()
+        );
+        List<Object> responses = (List<Object>) body.get('responses');
+        if (responses == null) {
+            return;
+        }
+
+        for (Object responseObj : responses) {
+            Map<String, Object> response = (Map<String, Object>) responseObj;
+            Object statusObj = response.get('status');
+            if (statusObj == null || (Integer) statusObj != 200) {
+                continue;
+            }
+
+            Integer chunkIndex = Integer.valueOf((String) response.get('id'));
+            if (chunkIndex < 0 || chunkIndex >= chunk.size()) {
+                continue;
+            }
+
+            Map<String, Object> responseBody = (Map<String, Object>) response.get(
+                'body'
+            );
+            Map<String, Object> fields = responseBody == null
+                ? null
+                : (Map<String, Object>) responseBody.get('fields');
+            if (fields == null) {
+                continue;
+            }
+
+            SharePointDocumentResult result = chunk[chunkIndex];
+            result.documentType = (String) fields.get(MP_DOCUMENT_TYPE);
+            result.projectId = (String) fields.get(MP_PROJECT_ID);
+            result.opportunityId = (String) fields.get(MP_OPPORTUNITY_ID);
+        }
+    }
+
+    // Matches Document Name on the "filename" managed property (the document's actual file name, as
+    // opposed to the separate, often-empty "Title" list column) with a trailing wildcard, so "test"
+    // matches "testdocument.docx". Note: SharePoint/Graph KQL only supports prefix wildcards (word*),
+    // not leading or mid-word wildcards - "test" won't match "mydocument-test.docx" since "test" isn't
     // a token prefix there. True arbitrary substring search isn't supported by the search index.
-    private static String buildQueryText(String documentName, String author) {
+    //
+    // Document Type/Project ID/Opportunity ID match exactly (no wildcard) against the custom managed
+    // properties configured in your SharePoint Search Schema (see the MP_* constants above).
+    private static String buildQueryText(
+        String documentName,
+        String documentType,
+        String projectId,
+        String opportunityId,
+        String author
+    ) {
         List<String> clauses = new List<String>();
         clauses.add('Path:"' + SITE_PATH + '*"');
         if (String.isNotBlank(documentName)) {
             clauses.add('filename:"' + escapeKql(documentName) + '*"');
+        }
+        if (String.isNotBlank(documentType)) {
+            clauses.add(
+                MP_DOCUMENT_TYPE + ':"' + escapeKql(documentType) + '"'
+            );
+        }
+        if (String.isNotBlank(projectId)) {
+            clauses.add(MP_PROJECT_ID + ':"' + escapeKql(projectId) + '"');
+        }
+        if (String.isNotBlank(opportunityId)) {
+            clauses.add(
+                MP_OPPORTUNITY_ID + ':"' + escapeKql(opportunityId) + '"'
+            );
         }
         if (String.isNotBlank(author)) {
             clauses.add(MP_AUTHOR + ':"' + escapeKql(author) + '*"');
@@ -237,6 +401,10 @@ public with sharing class SharePointSearchController {
         result.author = createdByUser == null
             ? null
             : (String) createdByUser.get('displayName');
+
+        // documentType/projectId/opportunityId are filled in afterward by enrichWithCustomFields()
+        // via a separate $batch call - the search response itself doesn't carry them (see
+        // buildRequestBody()).
 
         return result;
     }

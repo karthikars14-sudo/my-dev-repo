@@ -13,6 +13,31 @@
                         label="Document Name"
                         value={documentName}
                         onchange={handleDocumentNameChange}
+                        onkeyup={handleKeyUp}
+                    ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-input
+                        label="Document Type"
+                        value={documentType}
+                        onchange={handleDocumentTypeChange}
+                        onkeyup={handleKeyUp}
+                    ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-input
+                        label="Project ID"
+                        value={projectId}
+                        onchange={handleProjectIdChange}
+                        onkeyup={handleKeyUp}
+                    ></lightning-input>
+                </lightning-layout-item>
+                <lightning-layout-item size="6" padding="around-small">
+                    <lightning-input
+                        label="Opportunity ID"
+                        value={opportunityId}
+                        onchange={handleOpportunityIdChange}
+                        onkeyup={handleKeyUp}
                     ></lightning-input>
                 </lightning-layout-item>
                 <lightning-layout-item size="6" padding="around-small">
@@ -20,11 +45,12 @@
                         label="Author"
                         value={author}
                         onchange={handleAuthorChange}
+                        onkeyup={handleKeyUp}
                     ></lightning-input>
                 </lightning-layout-item>
             </lightning-layout>
 
-            <div class="slds-var-m-bottom_medium">
+            <div class="slds-var-m-bottom_medium slds-align_absolute-center">
                 <lightning-button
                     label="Clear"
                     onclick={handleClear}
@@ -56,7 +82,10 @@
                     <thead>
                         <tr class="slds-line-height_reset">
                             <th scope="col">Document Name</th>
+                            <th scope="col">Document Type</th>
                             <th scope="col">Author</th>
+                            <th scope="col">Project ID</th>
+                            <th scope="col">Opportunity ID</th>
                             <th scope="col">Last Modified</th>
                             <th scope="col">Download</th>
                         </tr>
@@ -65,7 +94,10 @@
                         <template for:each={results} for:item="doc">
                             <tr key={doc.key}>
                                 <td>{doc.title}</td>
+                                <td>{doc.documentType}</td>
                                 <td>{doc.author}</td>
+                                <td>{doc.projectId}</td>
+                                <td>{doc.opportunityId}</td>
                                 <td>
                                     <lightning-formatted-date-time
                                         value={doc.lastModified}

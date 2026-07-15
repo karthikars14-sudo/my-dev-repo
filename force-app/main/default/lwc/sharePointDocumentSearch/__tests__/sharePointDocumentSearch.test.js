@@ -23,7 +23,10 @@ jest.mock(
 const SEARCH_RESULTS = [
     {
         title: 'testdocument.docx',
+        documentType: 'Contract',
         author: 'Jane Doe',
+        projectId: '12345',
+        opportunityId: '00654321',
         fileUrl:
             'https://home3925.sharepoint.com/sites/DemoSite/Documents/testdocument.docx',
         lastModified: '2026-06-01T10:00:00Z',
@@ -92,7 +95,7 @@ describe('c-share-point-document-search', () => {
         return element;
     }
 
-    it('renders the Document Name and Author fields and a Clear and Search button', () => {
+    it('renders all 5 search fields and a Clear and Search button', () => {
         const element = createElement('c-share-point-document-search', {
             is: SharePointDocumentSearch
         });
@@ -101,7 +104,13 @@ describe('c-share-point-document-search', () => {
         const labels = Array.from(
             element.shadowRoot.querySelectorAll('lightning-input')
         ).map((input) => input.label);
-        expect(labels).toEqual(['Document Name', 'Author']);
+        expect(labels).toEqual([
+            'Document Name',
+            'Document Type',
+            'Project ID',
+            'Opportunity ID',
+            'Author'
+        ]);
 
         const buttonLabels = Array.from(
             element.shadowRoot.querySelectorAll('lightning-button')
@@ -142,7 +151,45 @@ describe('c-share-point-document-search', () => {
         expect(element.shadowRoot.querySelector('table')).toBeNull();
     });
 
-    it('calls Apex with the Document Name and Author values and renders a result row', async () => {
+    it('triggers a search when Enter is pressed in a search field', async () => {
+        searchDocuments.mockResolvedValue(SEARCH_RESULTS);
+
+        const element = createElement('c-share-point-document-search', {
+            is: SharePointDocumentSearch
+        });
+        document.body.appendChild(element);
+
+        const nameInput = getFieldInput(element, 'Document Name');
+        nameInput.value = 'test';
+        nameInput.dispatchEvent(new CustomEvent('change'));
+        nameInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }));
+
+        await flushPromises();
+        await flushPromises();
+
+        expect(searchDocuments).toHaveBeenCalledTimes(1);
+        expect(
+            element.shadowRoot.querySelectorAll('table tbody tr').length
+        ).toBe(1);
+    });
+
+    it('does not trigger a search when a non-Enter key is pressed', async () => {
+        searchDocuments.mockResolvedValue(SEARCH_RESULTS);
+
+        const element = createElement('c-share-point-document-search', {
+            is: SharePointDocumentSearch
+        });
+        document.body.appendChild(element);
+
+        const nameInput = getFieldInput(element, 'Document Name');
+        nameInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'a' }));
+
+        await flushPromises();
+
+        expect(searchDocuments).not.toHaveBeenCalled();
+    });
+
+    it('calls Apex with all 5 search field values and renders a result row', async () => {
         const element = createElement('c-share-point-document-search', {
             is: SharePointDocumentSearch
         });
@@ -151,6 +198,18 @@ describe('c-share-point-document-search', () => {
 
         getFieldInput(element, 'Document Name').value = 'test';
         getFieldInput(element, 'Document Name').dispatchEvent(
+            new CustomEvent('change')
+        );
+        getFieldInput(element, 'Document Type').value = 'Contract';
+        getFieldInput(element, 'Document Type').dispatchEvent(
+            new CustomEvent('change')
+        );
+        getFieldInput(element, 'Project ID').value = '12345';
+        getFieldInput(element, 'Project ID').dispatchEvent(
+            new CustomEvent('change')
+        );
+        getFieldInput(element, 'Opportunity ID').value = '00654321';
+        getFieldInput(element, 'Opportunity ID').dispatchEvent(
             new CustomEvent('change')
         );
         getFieldInput(element, 'Author').value = 'Jane Doe';
@@ -168,6 +227,9 @@ describe('c-share-point-document-search', () => {
 
         expect(searchDocuments.mock.calls[0][0]).toEqual({
             documentName: 'test',
+            documentType: 'Contract',
+            projectId: '12345',
+            opportunityId: '00654321',
             author: 'Jane Doe'
         });
 

@@ -6,6 +6,9 @@ import getDownloadUrl from '@salesforce/apex/SharePointSearchController.getDownl
 
 export default class SharePointDocumentSearch extends LightningElement {
     documentName = '';
+    documentType = '';
+    projectId = '';
+    opportunityId = '';
     author = '';
 
     results = [];
@@ -17,12 +20,33 @@ export default class SharePointDocumentSearch extends LightningElement {
         this.documentName = event.target.value;
     }
 
+    handleDocumentTypeChange(event) {
+        this.documentType = event.target.value;
+    }
+
+    handleProjectIdChange(event) {
+        this.projectId = event.target.value;
+    }
+
+    handleOpportunityIdChange(event) {
+        this.opportunityId = event.target.value;
+    }
+
     handleAuthorChange(event) {
         this.author = event.target.value;
     }
 
+    handleKeyUp(event) {
+        if (event.key === 'Enter') {
+            this.handleSearch();
+        }
+    }
+
     handleClear() {
         this.documentName = '';
+        this.documentType = '';
+        this.projectId = '';
+        this.opportunityId = '';
         this.author = '';
         this.results = [];
         this.error = undefined;
@@ -36,6 +60,9 @@ export default class SharePointDocumentSearch extends LightningElement {
         try {
             const searchResults = await searchDocuments({
                 documentName: this.documentName,
+                documentType: this.documentType,
+                projectId: this.projectId,
+                opportunityId: this.opportunityId,
                 author: this.author
             });
             this.results = searchResults.map((doc, index) => ({
